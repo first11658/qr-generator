@@ -9,7 +9,6 @@
     <meta name="apple-mobile-web-app-title" content="QR Generator">
     <title>QR Generator</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bwip-js@3.5.0/dist/bwip-js-min.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
         import { getDatabase, ref, set, get, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
@@ -273,8 +272,9 @@
 </div>
 
 <script type="module">
-// ── ZXing Import ─────────────────────────────────
+// ── Imports ───────────────────────────────────────
 import { BrowserMultiFormatReader, DecodeHintType, BarcodeFormat } from 'https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0/+esm';
+import bwipjs from 'https://cdn.jsdelivr.net/npm/bwip-js@3.5.0/+esm';
 
 const hints = new Map();
 hints.set(DecodeHintType.POSSIBLE_FORMATS, [
