@@ -272,10 +272,7 @@
 </div>
 
 <script type="module">
-// ── ZXing Import ─────────────────────────────────
-import { BrowserMultiFormatReader, DecodeHintType, BarcodeFormat } from 'https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0/+esm';
-
-// ── bwip-js (lazy, so a load failure doesn't crash the whole module) ─────────
+// ── Lazy loaders (dynamic import so a CDN failure never crashes the app) ─────
 let _bwipjsPromise = null;
 function loadBwipjs() {
     if (!_bwipjsPromise) {
@@ -286,21 +283,25 @@ function loadBwipjs() {
     return _bwipjsPromise;
 }
 
-const hints = new Map();
-hints.set(DecodeHintType.POSSIBLE_FORMATS, [
-    BarcodeFormat.QR_CODE,
-    BarcodeFormat.DATA_MATRIX,
-    BarcodeFormat.PDF_417,
-    BarcodeFormat.AZTEC,
-    BarcodeFormat.CODE_128,
-    BarcodeFormat.CODE_39,
-    BarcodeFormat.EAN_13,
-    BarcodeFormat.EAN_8,
-]);
-
-const codeReader = new BrowserMultiFormatReader(hints);
-window._codeReader = codeReader;
-window._zxingReady = true;
+let _codeReader = null;
+async function getCodeReader() {
+    if (_codeReader) return _codeReader;
+    try {
+        const { BrowserMultiFormatReader, DecodeHintType, BarcodeFormat } =
+            await import('https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0/+esm');
+        const hints = new Map();
+        hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+            BarcodeFormat.QR_CODE, BarcodeFormat.DATA_MATRIX,
+            BarcodeFormat.PDF_417, BarcodeFormat.AZTEC,
+            BarcodeFormat.CODE_128, BarcodeFormat.CODE_39,
+            BarcodeFormat.EAN_13, BarcodeFormat.EAN_8,
+        ]);
+        _codeReader = new BrowserMultiFormatReader(hints);
+        return _codeReader;
+    } catch(e) {
+        return null;
+    }
+}
 
 // ── State ─────────────────────────────────────────
 let currentUser = null;
@@ -636,8 +637,7 @@ window.closeLabelModal = closeLabelModal;
 document.getElementById('labelModal').addEventListener('click', e => { if (e.target.id === 'labelModal') closeLabelModal(); });
 
 // ── Scanner (ZXing) ───────────────────────────────
-window.openScanner = function() {
-    // switch to text tab
+window.openScanner = async function() {
     const tabs = document.querySelectorAll('.tab');
     const contents = document.querySelectorAll('.tab-content');
     tabs.forEach(t => t.classList.remove('active'));
@@ -646,10 +646,17 @@ window.openScanner = function() {
     activeTab = 'text';
 
     document.getElementById('scannerModal').classList.add('show');
+    document.getElementById('scanResult').textContent = '⏳ กำลังโหลด...';
+
+    const reader = await getCodeReader();
+    if (!reader) {
+        document.getElementById('scanResult').textContent = '⚠️ โหลด scanner ไม่ได้';
+        return;
+    }
     document.getElementById('scanResult').textContent = '';
 
     const video = document.getElementById('scanVideo');
-    window._codeReader.decodeFromVideoDevice(null, video, (result, err) => {
+    reader.decodeFromVideoDevice(null, video, (result) => {
         if (result) {
             const text = result.getText();
             const fmt = result.getBarcodeFormat();
@@ -662,7 +669,7 @@ window.openScanner = function() {
 };
 
 window.closeScanner = function() {
-    window._codeReader.reset();
+    if (_codeReader) _codeReader.reset();
     document.getElementById('scannerModal').classList.remove('show');
     document.getElementById('scanResult').textContent = '';
 };
