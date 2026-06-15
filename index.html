@@ -272,9 +272,19 @@
 </div>
 
 <script type="module">
-// ── Imports ───────────────────────────────────────
+// ── ZXing Import ─────────────────────────────────
 import { BrowserMultiFormatReader, DecodeHintType, BarcodeFormat } from 'https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0/+esm';
-import bwipjs from 'https://cdn.jsdelivr.net/npm/bwip-js@3.5.0/+esm';
+
+// ── bwip-js (lazy, so a load failure doesn't crash the whole module) ─────────
+let _bwipjsPromise = null;
+function loadBwipjs() {
+    if (!_bwipjsPromise) {
+        _bwipjsPromise = import('https://cdn.jsdelivr.net/npm/bwip-js@3.5.0/+esm')
+            .then(m => m.default || m)
+            .catch(() => null);
+    }
+    return _bwipjsPromise;
+}
 
 const hints = new Map();
 hints.set(DecodeHintType.POSSIBLE_FORMATS, [
@@ -432,32 +442,38 @@ window.onCodeTypeChange = function() {
 };
 
 // ── Generate ──────────────────────────────────────
-window.generateQR = function() {
+window.generateQR = async function() {
     const data = getData();
     if (!data) { showToast('⚠️ Please enter something!', 'error'); return; }
     currentData = data;
     const codeType = document.getElementById('codeType').value;
-    renderCode(data, codeType);
-    if (!editingId) saveHistory({ data, type: activeTab, codeType, level: document.getElementById('errorLevel').value });
-    const label = document.getElementById('codeType').options[document.getElementById('codeType').selectedIndex].text;
-    showToast(`✅ ${label} created!`);
+    const ok = await renderCode(data, codeType);
+    if (ok && !editingId) saveHistory({ data, type: activeTab, codeType, level: document.getElementById('errorLevel').value });
+    if (ok) {
+        const label = document.getElementById('codeType').options[document.getElementById('codeType').selectedIndex].text;
+        showToast(`✅ ${label} created!`);
+    }
 };
 
-function renderCode(data, codeType) {
+async function renderCode(data, codeType) {
     const box = document.getElementById('qrcode');
     box.innerHTML = '';
 
     if (codeType === 'qrcode') {
-        // ใช้ QRCode.js
         new QRCode(box, {
             text: data, width: 200, height: 200,
             colorDark: '#000', colorLight: '#fff',
             correctLevel: QRCode.CorrectLevel[document.getElementById('errorLevel').value]
         });
     } else {
-        // ใช้ bwip-js สำหรับ DataMatrix และ Barcode อื่นๆ
         const canvas = document.createElement('canvas');
         box.appendChild(canvas);
+        const bwipjs = await loadBwipjs();
+        if (!bwipjs) {
+            box.innerHTML = `<div style="color:red;font-size:0.85em;padding:10px;background:#ffe3e3;border-radius:8px;">⚠️ bwip-js โหลดไม่ได้</div>`;
+            showToast('⚠️ bwip-js โหลดไม่ได้', 'error');
+            return false;
+        }
         try {
             bwipjs.toCanvas(canvas, {
                 bcid: codeType,
@@ -467,14 +483,11 @@ function renderCode(data, codeType) {
                 includetext: ['code128','code39','ean13','ean8','upca'].includes(codeType),
                 textxalign: 'center',
             });
-            canvas.style.borderRadius = '8px';
-            canvas.style.border = '2px solid #f0f0f0';
-            canvas.style.padding = '6px';
-            canvas.style.maxWidth = '100%';
+            canvas.style.cssText = 'border-radius:8px;border:2px solid #f0f0f0;padding:6px;max-width:100%;';
         } catch(e) {
-            box.innerHTML = `<div style="color:red;font-size:0.85em;padding:10px;">⚠️ Error: ${e.message}</div>`;
+            box.innerHTML = `<div style="color:red;font-size:0.85em;padding:10px;background:#ffe3e3;border-radius:8px;">⚠️ Error: ${e.message}</div>`;
             showToast('⚠️ ' + e.message, 'error');
-            return;
+            return false;
         }
     }
 
@@ -482,6 +495,7 @@ function renderCode(data, codeType) {
     document.getElementById('qrInfo').textContent = `${label} • ${data.length} chars`;
     document.getElementById('qrInfo').classList.add('show');
     document.getElementById('actionBtns').style.display = 'flex';
+    return true;
 }
 
 window.downloadQR = function() {
@@ -512,20 +526,20 @@ window.clearAll = function() {
 };
 
 // ── History Actions ───────────────────────────────
-window.loadHistory = function(id) {
+window.loadHistory = async function(id) {
     const item = getList().find(i => i.id === id);
     if (!item) return;
     fillForm(item);
-    renderCode(item.data, item.codeType || 'qrcode');
+    await renderCode(item.data, item.codeType || 'qrcode');
     currentData = item.data;
     showToast('📂 Loaded!', 'info');
 };
 
-window.startEdit = function(id) {
+window.startEdit = async function(id) {
     const item = getList().find(i => i.id === id);
     if (!item) return;
     editingId = id; fillForm(item);
-    renderCode(item.data, item.codeType || 'qrcode');
+    await renderCode(item.data, item.codeType || 'qrcode');
     currentData = item.data;
     document.getElementById('editBanner').classList.add('show');
     document.getElementById('normalBtns').style.display = 'none';
@@ -538,14 +552,14 @@ window.startEdit = function(id) {
     window.scrollTo(0, 0);
 };
 
-window.updateHistoryItem = function() {
+window.updateHistoryItem = async function() {
     if (!editingId) return;
     const data = getData();
     if (!data) { showToast('⚠️ Data cannot be empty!', 'error'); return; }
     const codeType = document.getElementById('codeType').value;
     saveHistory({ data, type: activeTab, codeType, level: document.getElementById('errorLevel').value });
     currentData = data;
-    renderCode(data, codeType);
+    await renderCode(data, codeType);
     cancelEdit();
     showToast('✅ สร้างประวัติใหม่แล้ว ประวัติเก่ายังอยู่ครบ!');
 };
